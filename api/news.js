@@ -1,31 +1,49 @@
 import * as cheerio from "cheerio";
+import admin from "firebase-admin";
+
+function initAdmin() {
+  if (admin.apps.length) return;
+
+  const projectId = process.env.FIREBASE_PROJECT_ID;
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+  const privateKey = (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+
+  admin.initializeApp({
+    credential: admin.credential.cert({ projectId, clientEmail, privateKey }),
+  });
+}
 
 export default async function handler(req, res) {
-  // ===== CORS =====
-  res.setHeader("Access-Control-Allow-Origin", "https://lucabottiglieri94.github.io");
+  // CORS solo per la tua home
+  const ORIGIN = "https://lucabottiglieri94.github.io";
+  res.setHeader("Access-Control-Allow-Origin", ORIGIN);
   res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.setHeader("Vary", "Origin");
 
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
+  if (req.method === "OPTIONS") return res.status(200).end();
+  if (req.method !== "GET") return res.status(405).json({ items: [], error: "Method Not Allowed" });
+
+  // Auth: verifica Firebase ID token
+  const auth = req.headers.authorization || "";
+  const match = auth.match(/^Bearer\s+(.+)$/i);
+  if (!match) return res.status(401).json({ items: [], error: "Missing token" });
+
+  try {
+    initAdmin();
+    await admin.auth().verifyIdToken(match[1]); // se non valido -> throw
+  } catch {
+    return res.status(401).json({ items: [], error: "Unauthorized" });
   }
 
-  // Solo GET
-  if (req.method !== "GET") {
-    return res.status(405).json({ items: [], error: "Method Not Allowed" });
-  }
-  // ===== /CORS =====
-
+  // Scraping
   try {
     const url = "https://www.motorisumotori.it/category/news";
     const r = await fetch(url, {
       headers: { "user-agent": "AutoAI-NewsBot/1.0 (+https://vercel.com)" }
     });
 
-    if (!r.ok) {
-      return res.status(502).json({ items: [], error: "Upstream HTTP " + r.status });
-    }
+    if (!r.ok) return res.status(502).json({ items: [], error: "Upstream HTTP " + r.status });
 
     const html = await r.text();
     const $ = cheerio.load(html);
