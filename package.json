@@ -4,9 +4,6 @@
   "private": true,
   "description": "Backend API per sito auto (brands, models, news)",
   "type": "commonjs",
-  "engines": {
-    "node": ">=18.x"
-  },
   "dependencies": {
     "cheerio": "^1.0.0",
     "cors": "^2.8.5"
