@@ -28,7 +28,7 @@ const BRAND_CONFIG = {
     domain: "jeep.it",
     // Jeep NON ha pattern unico -> accettiamo quasi tutto e filtriamo con regole smart sotto
     urlHints: ["/"],
-    fallbackPages: ["https://www.jeep.it/"]
+    fallbackPages: ["https://www.jeep-official.it/"]
   }
 };
 
@@ -39,17 +39,17 @@ const MANUAL_MODELS = {
 };
 
 const JEEP_MODEL_URLS = {
-  avenger: "https://www.jeep.it/avenger",
-  renegade: "https://www.jeep.it/renegade",
-  compass: "https://www.jeep.it/compass",
-  wrangler: "https://www.jeep.it/wrangler",
-  "grand cherokee": "https://www.jeep.it/grand-cherokee"
+  avenger hybrid: "https://www.jeep-official.it/jeep-avenger/4xe-hybrid",
+  renegade: "https://www.jeep-official.it/jeep-renegade/e-hybrid",
+  compass e-hybrid: "https://www.jeep-official.it/nuova-jeep-compass/e-hybrid",
+  wrangler "https://www.jeep-official.it/jeep-wrangler/termico",
+  grand cherokee "https://www.jeep-official.it/jeep-grand-cherokee/plug-in"
 };
 
 /* ===================== HELPERS ===================== */
 const BRAND_HOME = {
   fiat: "https://www.fiat.it/",
-  jeep: "https://www.jeep.it/"
+  jeep: "https://www.jeep-official.it"
 };
 
 function absUrl(base, href) {
