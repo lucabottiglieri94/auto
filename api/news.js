@@ -8,21 +8,47 @@ function initAdmin() {
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   const privateKey = (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
 
+  if (!projectId || !clientEmail || !privateKey) {
+    throw new Error("Missing Firebase ENV (PROJECT_ID / CLIENT_EMAIL / PRIVATE_KEY)");
+  }
+
   admin.initializeApp({
     credential: admin.credential.cert({ projectId, clientEmail, privateKey }),
   });
 }
 
-export default async function handler(req, res) {
-  // CORS solo per la tua home
-  const ORIGIN = "https://lucabottiglieri94.github.io";
-  res.setHeader("Access-Control-Allow-Origin", ORIGIN);
+function applyCors(req, res) {
+  const allowed = new Set([
+    "https://lucabottiglieri94.github.io",
+    "http://localhost:5173",
+    "http://localhost:3000",
+  ]);
+
+  const origin = req.headers.origin;
+  if (origin && allowed.has(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  } else {
+    // niente header = browser blocca, ma evita di aprire a tutti
+  }
+
+  res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  res.setHeader("Vary", "Origin");
+  res.setHeader("Access-Control-Max-Age", "86400");
 
-  if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "GET") return res.status(405).json({ items: [], error: "Method Not Allowed" });
+  if (req.method === "OPTIONS") {
+    res.status(200).end();
+    return true;
+  }
+  return false;
+}
+
+export default async function handler(req, res) {
+  if (applyCors(req, res)) return;
+
+  if (req.method !== "GET") {
+    return res.status(405).json({ items: [], error: "Method Not Allowed" });
+  }
 
   // Auth: verifica Firebase ID token
   const auth = req.headers.authorization || "";
@@ -31,8 +57,8 @@ export default async function handler(req, res) {
 
   try {
     initAdmin();
-    await admin.auth().verifyIdToken(match[1]); // se non valido -> throw
-  } catch {
+    await admin.auth().verifyIdToken(match[1]);
+  } catch (e) {
     return res.status(401).json({ items: [], error: "Unauthorized" });
   }
 
@@ -40,10 +66,12 @@ export default async function handler(req, res) {
   try {
     const url = "https://www.motorisumotori.it/category/news";
     const r = await fetch(url, {
-      headers: { "user-agent": "AutoAI-NewsBot/1.0 (+https://vercel.com)" }
+      headers: { "user-agent": "AutoAI-NewsBot/1.0 (+https://vercel.com)" },
     });
 
-    if (!r.ok) return res.status(502).json({ items: [], error: "Upstream HTTP " + r.status });
+    if (!r.ok) {
+      return res.status(502).json({ items: [], error: "Upstream HTTP " + r.status });
+    }
 
     const html = await r.text();
     const $ = cheerio.load(html);
@@ -56,6 +84,7 @@ export default async function handler(req, res) {
 
       const title = $(a).text().trim();
       let link = $(a).attr("href") || "";
+
       if (!title || !link) return;
 
       if (link.startsWith("/")) link = "https://www.motorisumotori.it" + link;
