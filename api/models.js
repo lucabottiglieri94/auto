@@ -38,6 +38,15 @@ const MANUAL_MODELS = {
   jeep: ["Avenger", "Renegade", "Compass", "Wrangler", "Grand Cherokee"]
 };
 
+const JEEP_MODEL_URLS = {
+  "avenger": "https://www.jeep.it/avenger",
+  "renegade": "https://www.jeep.it/renegade",
+  "compass": "https://www.jeep.it/compass",
+  "wrangler": "https://www.jeep.it/wrangler",
+  "grand cherokee": "https://www.jeep.it/grand-cherokee"
+};
+
+
 /* ===================== HELPERS ===================== */
 const BRAND_HOME = {
   fiat: "https://www.fiat.it/",
@@ -302,8 +311,8 @@ module.exports = async (req, res) => {
       return bad(res, "Brand non supportato", { supported: Object.keys(BRAND_CONFIG) });
     }
 
-    const cacheKey = `models:V2:${brandId}`;
-    const cached = cacheGet(cacheKey);
+const cacheKey = `models:v4:${brandId}`;
+ const cached = cacheGet(cacheKey);
     if (cached) return ok(res, cached);
 
     let models = [];
@@ -333,6 +342,17 @@ module.exports = async (req, res) => {
 
     // 4) shape finale: garantisce {name,url} e url assoluti dove presenti
     models = shapeModels(models, brandId, cfg.site);
+    if (brandId === "jeep") {
+  models = models.map(m => {
+    if (m.url) return m;
+    const key = m.name.toLowerCase();
+    return {
+      name: m.name,
+      url: JEEP_MODEL_URLS[key] || ""
+    };
+  });
+}
+
 
     const payload = {
       ok: true,
