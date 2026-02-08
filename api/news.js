@@ -1,6 +1,22 @@
 import * as cheerio from "cheerio";
 
 export default async function handler(req, res) {
+  // ===== CORS =====
+  res.setHeader("Access-Control-Allow-Origin", "https://lucabottiglieri94.github.io");
+  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Vary", "Origin");
+
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
+  // Solo GET
+  if (req.method !== "GET") {
+    return res.status(405).json({ items: [], error: "Method Not Allowed" });
+  }
+  // ===== /CORS =====
+
   try {
     const url = "https://www.motorisumotori.it/category/news";
     const r = await fetch(url, {
@@ -8,8 +24,7 @@ export default async function handler(req, res) {
     });
 
     if (!r.ok) {
-      res.statusCode = 502;
-      return res.json({ items: [], error: "Upstream HTTP " + r.status });
+      return res.status(502).json({ items: [], error: "Upstream HTTP " + r.status });
     }
 
     const html = await r.text();
