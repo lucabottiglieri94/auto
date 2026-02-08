@@ -341,15 +341,38 @@ const cacheKey = `models:v4:${brandId}`;
     models = ensureMinimum(brandId, models);
 
     // 4) shape finale: garantisce {name,url} e url assoluti dove presenti
-    models = shapeModels(models, brandId, cfg.site);
-    if (brandId === "jeep") {
+   models = shapeModels(models, brandId, cfg.site);
+
+// FORZA URL JEEP SEMPRE (anche se Brave/scraping falliscono)
+if (brandId === "jeep") {
+  const JEEP_MODEL_URLS = {
+    "avenger": "https://www.jeep.it/avenger",
+    "renegade": "https://www.jeep.it/renegade",
+    "compass": "https://www.jeep.it/compass",
+    "wrangler": "https://www.jeep.it/wrangler",
+    "grand cherokee": "https://www.jeep.it/grand-cherokee"
+  };
+
+  const slugify = (s) =>
+    String(s || "")
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9-]/g, "");
+
   models = models.map(m => {
+    const name = String(m.name || "").trim();
+    const key = name.toLowerCase().trim();
+
     if (m.url) return m;
-    const key = m.name.toLowerCase();
-    return {
-      name: m.name,
-      url: JEEP_MODEL_URLS[key] || ""
-    };
+
+    // 1) mapping noto
+    const mapped = JEEP_MODEL_URLS[key];
+    if (mapped) return { name, url: mapped };
+
+    // 2) fallback: https://www.jeep.it/<slug>
+    const slug = slugify(name);
+    return { name, url: slug ? `https://www.jeep.it/${slug}` : "" };
   });
 }
 
