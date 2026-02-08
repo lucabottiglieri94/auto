@@ -302,7 +302,7 @@ module.exports = async (req, res) => {
       return bad(res, "Brand non supportato", { supported: Object.keys(BRAND_CONFIG) });
     }
 
-    const cacheKey = `models:${brandId}`;
+    const cacheKey = `models:V2:${brandId}`;
     const cached = cacheGet(cacheKey);
     if (cached) return ok(res, cached);
 
