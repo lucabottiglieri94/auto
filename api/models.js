@@ -7,7 +7,6 @@ const {
   serverError,
   getQuery,
   normalizeBrand,
-  uniqueClean,
   cacheGet,
   cacheSet,
   ttlMs
@@ -19,15 +18,15 @@ const BRAND_CONFIG = {
     name: "Fiat",
     site: "https://www.fiat.it/",
     domain: "fiat.it",
-    urlHints: ["/modello/"], // Fiat: pagine modello tipicamente qui
+    urlHints: ["/modello/"],
     fallbackPages: ["https://www.fiat.it/"]
   },
   jeep: {
     name: "Jeep",
-    site: "https://www.jeep-official.it/",
-    domain: "jeep-official.it",
-    urlHints: ["/modelli/", "/modello/"], // Jeep: spesso /modelli/ ma teniamo anche /modello/
-    fallbackPages: ["https://www.jeep-official.it/"]
+    site: "https://www.jeep.it/",
+    domain: "jeep.it",
+    urlHints: ["/modelli/", "/modello/"],
+    fallbackPages: ["https://www.jeep.it/"]
   }
 };
 
@@ -37,6 +36,53 @@ const MANUAL_MODELS = {
   jeep: ["Avenger", "Renegade", "Compass", "Wrangler", "Grand Cherokee"]
 };
 
+/* ========= HELPERS URL + SHAPING ========= */
+const BRAND_HOME = {
+  fiat: "https://www.fiat.it/",
+  jeep: "https://www.jeep.it/"
+};
+
+function absUrl(base, href){
+  if(!href) return "";
+  try{
+    if(/^https?:\/\//i.test(href)) return href;
+    if(String(href).startsWith("//")) return "https:" + href;
+    if(String(href).startsWith("/")) return base.replace(/\/$/, "") + href;
+    return new URL(href, base).toString();
+  } catch {
+    return "";
+  }
+}
+
+function shapeModels(rawModels, brandId, usedUrl = ""){
+  const base = BRAND_HOME[brandId] || usedUrl || "";
+  const out = [];
+
+  for(const m of (rawModels || [])){
+    if(typeof m === "string"){
+      const name = m.trim();
+      if(name) out.push({ name, url: "" });
+      continue;
+    }
+    if(m && typeof m === "object"){
+      const name = String(m.name || m.title || m.label || "").trim();
+      const urlRaw = m.url || m.href || m.link || m.permalink || m.pageUrl || "";
+      const url = absUrl(base, String(urlRaw || "").trim());
+      if(name) out.push({ name, url });
+    }
+  }
+
+  // dedupe per nome
+  const seen = new Set();
+  return out.filter(x => {
+    const k = x.name.toLowerCase();
+    if(seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+/* ========= EXISTING LOGIC ========= */
 function isAllowedModelUrl(brandId, url) {
   const cfg = BRAND_CONFIG[brandId];
   if (!cfg) return false;
@@ -129,7 +175,6 @@ async function fetchHtml(url) {
 
 // Estrae link veri a pagine modello dal DOM
 function extractModelLinksFromHtml(brandId, pageUrl, html) {
-  const cfg = BRAND_CONFIG[brandId];
   const $ = cheerio.load(html);
 
   const out = [];
@@ -182,8 +227,6 @@ function ensureMinimum(brandId, models) {
   const cfg = BRAND_CONFIG[brandId];
   const out = [...models];
 
-  // se mancano modelli, aggiunge fallback SOLO come nome (senza url certa)
-  // (il frontend li renderà come chip non cliccabile)
   if (out.length < 6) {
     const manual = MANUAL_MODELS[brandId] || [];
     for (const name of manual) {
@@ -194,7 +237,6 @@ function ensureMinimum(brandId, models) {
     }
   }
 
-  // taglia max
   return out.slice(0, 25).map(m => ({
     name: String(m.name || "").trim() || cfg.name,
     url: m.url ? m.url.split("?")[0] : ""
@@ -224,13 +266,13 @@ module.exports = async (req, res) => {
 
     let models = [];
 
-    // 1) Brave (se presente) → migliore perché già dà URL modello
+    // 1) Brave (se presente)
     const braveModels = await braveSearchModels(brandId);
     if (braveModels && braveModels.length) {
       models = mergeUniqueByUrl(braveModels);
     }
 
-    // 2) Se Brave non basta → scraping “best effort” dai link del sito
+    // 2) scraping best effort
     if (models.length < 8) {
       for (const page of cfg.fallbackPages) {
         try {
@@ -246,13 +288,16 @@ module.exports = async (req, res) => {
 
     models = ensureMinimum(brandId, models);
 
+    // === GARANZIA SHAPE: sempre {name,url} e url assoluti
+    models = shapeModels(models, brandId, cfg.site);
+
     const payload = {
       ok: true,
       brand: { id: brandId, name: cfg.name, site: cfg.site },
       source: {
         braveEnabled: Boolean(process.env.BRAVE_API_KEY),
         note:
-          "Ritorna {name,url} quando trova pagine modello. Se Brave non è attivo o il sito cambia struttura, alcuni fallback possono uscire senza url."
+          "Ritorna sempre {name,url}. Se non trova url modello, lascia url vuoto solo per fallback manuale."
       },
       models
     };
