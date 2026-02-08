@@ -18,73 +18,101 @@ const BRAND_CONFIG = {
   fiat: {
     name: "Fiat",
     site: "https://www.fiat.it/",
-    // Pagina “gamma/modelli” cambia nel tempo: la cerchiamo via Brave se disponibile,
-    // altrimenti fallback a una pagina base e a lista manuale.
+    domain: "fiat.it",
+    urlHints: ["/modello/"], // Fiat: pagine modello tipicamente qui
     fallbackPages: ["https://www.fiat.it/"]
   },
   jeep: {
     name: "Jeep",
     site: "https://www.jeep-official.it/",
+    domain: "jeep-official.it",
+    urlHints: ["/modelli/", "/modello/"], // Jeep: spesso /modelli/ ma teniamo anche /modello/
     fallbackPages: ["https://www.jeep-official.it/"]
   }
 };
 
-// Fallback manuale: ti garantisce sempre output anche se lo scraping non trova niente.
-// Aggiorna qui quando vuoi.
+// Fallback manuale (usato solo se non troviamo abbastanza link reali)
 const MANUAL_MODELS = {
   fiat: ["600", "500", "500e", "Panda", "Tipo"],
   jeep: ["Avenger", "Renegade", "Compass", "Wrangler", "Grand Cherokee"]
 };
 
-async function braveSearch(query) {
+function isAllowedModelUrl(brandId, url) {
+  const cfg = BRAND_CONFIG[brandId];
+  if (!cfg) return false;
+  const u = String(url || "");
+  if (!u.includes(cfg.domain)) return false;
+  const low = u.toLowerCase();
+  return cfg.urlHints.some(h => low.includes(h));
+}
+
+function cleanTitleToName(title, brandName) {
+  return String(title || "")
+    .replace(/\s+/g, " ")
+    .replace(new RegExp(`\\s*\\|\\s*${brandName}.*$`, "i"), "")
+    .replace(new RegExp(`\\s*-\\s*${brandName}.*$`, "i"), "")
+    .trim();
+}
+
+function slugToName(slug) {
+  const s = String(slug || "")
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!s) return "";
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+async function braveSearchModels(brandId) {
   const key = process.env.BRAVE_API_KEY;
   if (!key) return null;
 
+  const cfg = BRAND_CONFIG[brandId];
+  const hints = cfg.urlHints.map(h => `inurl:${h}`).join(" OR ");
+  const q = `site:${cfg.domain} (${hints}) ${cfg.name}`;
+
   const url = new URL("https://api.search.brave.com/res/v1/web/search");
-  url.searchParams.set("q", query);
-  url.searchParams.set("count", "5");
+  url.searchParams.set("q", q);
+  url.searchParams.set("count", "25");
 
   const r = await fetch(url.toString(), {
     headers: {
-      "Accept": "application/json",
+      Accept: "application/json",
       "X-Subscription-Token": key
     }
   });
 
-  if (!r.ok) {
-    return null;
-  }
+  if (!r.ok) return null;
 
   const data = await r.json();
-  const results = (data?.web?.results || [])
-    .map(x => ({ title: x.title, url: x.url, description: x.description }))
-    .filter(x => x.url);
+  const results = data?.web?.results || [];
 
-  return results;
+  const seen = new Set();
+  const models = [];
+
+  for (const it of results) {
+    const rawUrl = it?.url || "";
+    if (!isAllowedModelUrl(brandId, rawUrl)) continue;
+
+    const cleanUrl = rawUrl.split("?")[0];
+    if (seen.has(cleanUrl)) continue;
+    seen.add(cleanUrl);
+
+    const name =
+      cleanTitleToName(it?.title, cfg.name) ||
+      slugToName(cleanUrl.split("/").filter(Boolean).pop());
+
+    models.push({ name, url: cleanUrl });
+  }
+
+  return models;
 }
 
-function pickLikelyModelsPage(brandId, results) {
-  if (!results || !results.length) return null;
-
-  const domain = brandId === "fiat" ? "fiat.it" : "jeep-official.it";
-  const good = results
-    .filter(r => r.url.includes(domain))
-    .sort((a, b) => {
-      const aScore = scoreUrl(a.url);
-      const bScore = scoreUrl(b.url);
-      return bScore - aScore;
-    });
-
-  return good[0]?.url || null;
-
-  function scoreUrl(u) {
-    const s = u.toLowerCase();
-    let score = 0;
-    if (s.includes("modelli")) score += 5;
-    if (s.includes("gamma")) score += 4;
-    if (s.includes("auto")) score += 2;
-    if (s.includes("models")) score += 3;
-    return score;
+function toAbsolute(base, href) {
+  try {
+    return new URL(href, base).toString();
+  } catch {
+    return null;
   }
 }
 
@@ -92,103 +120,85 @@ async function fetchHtml(url) {
   const r = await fetch(url, {
     headers: {
       "User-Agent": "Mozilla/5.0 (compatible; AutoBackend/1.0)",
-      "Accept": "text/html,application/xhtml+xml"
+      Accept: "text/html,application/xhtml+xml"
     }
   });
   if (!r.ok) throw new Error(`Fetch failed ${r.status} for ${url}`);
   return await r.text();
 }
 
-// Estrazione “best effort”: prende testi di link e headings e prova a ripulire
-function extractCandidateNamesFromHtml(html) {
+// Estrae link veri a pagine modello dal DOM
+function extractModelLinksFromHtml(brandId, pageUrl, html) {
+  const cfg = BRAND_CONFIG[brandId];
   const $ = cheerio.load(html);
 
-  const texts = [];
+  const out = [];
+  const seen = new Set();
 
-  $("a").each((_, el) => {
-    const t = $(el).text();
-    if (t) texts.push(t);
+  $("a[href]").each((_, el) => {
+    const href = $(el).attr("href");
+    const abs = toAbsolute(pageUrl, href);
+    if (!abs) return;
+
+    const cleanUrl = abs.split("?")[0];
+    if (!isAllowedModelUrl(brandId, cleanUrl)) return;
+    if (seen.has(cleanUrl)) return;
+    seen.add(cleanUrl);
+
+    const text = $(el).text().replace(/\s+/g, " ").trim();
+    const name = (text && text.length <= 40 ? text : "") ||
+      slugToName(cleanUrl.split("/").filter(Boolean).pop());
+
+    out.push({ name, url: cleanUrl });
   });
 
-  $("h1,h2,h3").each((_, el) => {
-    const t = $(el).text();
-    if (t) texts.push(t);
+  // ripulisce nomi troppo generici
+  const badNames = new Set([
+    "Gamma", "Modelli", "Auto", "Scopri", "Scopri di più", "Configura"
+  ].map(x => x.toLowerCase()));
+
+  return out.filter(m => {
+    const n = String(m.name || "").trim();
+    if (n.length < 2 || n.length > 40) return false;
+    if (badNames.has(n.toLowerCase())) return false;
+    return true;
   });
-
-  const cleaned = texts
-    .map(t => t.replace(/\s+/g, " ").trim())
-    .filter(t => t.length >= 2 && t.length <= 40)
-    .filter(t => !looksLikeMenuJunk(t));
-
-  // Heuristica: tiene parole con lettere/numero, scarta roba generica
-  const likely = cleaned.filter(t => /[A-Za-zÀ-ÿ0-9]/.test(t));
-
-  // Ulteriore ripulitura: rimuove duplicati e filtri “troppo comuni”
-  const uniq = uniqueClean(likely).filter(t => !tooGeneric(t));
-
-  return uniq;
-
-  function looksLikeMenuJunk(t) {
-    const s = t.toLowerCase();
-    return (
-      s.includes("privacy") ||
-      s.includes("cookie") ||
-      s.includes("contatti") ||
-      s.includes("assistenza") ||
-      s.includes("configura") ||
-      s.includes("scopri") ||
-      s.includes("offerte") ||
-      s.includes("promozioni") ||
-      s.includes("newsletter") ||
-      s.includes("login") ||
-      s.includes("menu")
-    );
-  }
-
-  function tooGeneric(t) {
-    const s = t.toLowerCase();
-    const bad = [
-      "home",
-      "gamma",
-      "modelli",
-      "auto",
-      "suv",
-      "city car",
-      "elettrica",
-      "ibrida",
-      "nuovo",
-      "nuova",
-      "scopri di più",
-      "scopri",
-      "configura",
-      "vai",
-      "clicca"
-    ];
-    return bad.includes(s);
-  }
 }
 
-function pickTopModels(brandId, candidates) {
-  // Qui facciamo un compromesso: prendiamo massimo 25 voci “sensate”
-  // e se non troviamo abbastanza, aggiungiamo il fallback manuale.
-  const max = 25;
+function mergeUniqueByUrl(list) {
+  const seen = new Set();
+  const out = [];
+  for (const x of list) {
+    const u = (x?.url || "").split("?")[0];
+    if (!u) continue;
+    if (seen.has(u)) continue;
+    seen.add(u);
+    out.push({ name: x.name || slugToName(u.split("/").filter(Boolean).pop()), url: u });
+  }
+  return out;
+}
 
-  const filtered = candidates
-    .filter(x => x.length <= 30)
-    .filter(x => !/^\d{4}$/.test(x)); // scarta anni
+function ensureMinimum(brandId, models) {
+  const cfg = BRAND_CONFIG[brandId];
+  const out = [...models];
 
-  let models = filtered.slice(0, max);
-
-  // Se lo scraping è “debole”, integra manuale
-  const manual = MANUAL_MODELS[brandId] || [];
-  for (const m of manual) {
-    if (models.length >= max) break;
-    if (!models.some(x => x.toLowerCase() === m.toLowerCase())) {
-      models.push(m);
+  // se mancano modelli, aggiunge fallback SOLO come nome (senza url certa)
+  // (il frontend li renderà come chip non cliccabile)
+  if (out.length < 6) {
+    const manual = MANUAL_MODELS[brandId] || [];
+    for (const name of manual) {
+      if (out.length >= 10) break;
+      if (!out.some(m => (m.name || "").toLowerCase() === name.toLowerCase())) {
+        out.push({ name, url: "" });
+      }
     }
   }
 
-  return uniqueClean(models);
+  // taglia max
+  return out.slice(0, 25).map(m => ({
+    name: String(m.name || "").trim() || cfg.name,
+    url: m.url ? m.url.split("?")[0] : ""
+  }));
 }
 
 module.exports = async (req, res) => {
@@ -212,41 +222,37 @@ module.exports = async (req, res) => {
     const cached = cacheGet(cacheKey);
     if (cached) return ok(res, cached);
 
-    // 1) Provo a trovare una pagina modelli via Brave (se hai la chiave)
-    let sourceUrl = null;
-    const brave = await braveSearch(`${cfg.name} modelli sito ufficiale`);
-    sourceUrl = pickLikelyModelsPage(brandId, brave);
+    let models = [];
 
-    // 2) Se niente Brave, uso fallback pages
-    const pages = sourceUrl ? [sourceUrl, ...cfg.fallbackPages] : cfg.fallbackPages;
+    // 1) Brave (se presente) → migliore perché già dà URL modello
+    const braveModels = await braveSearchModels(brandId);
+    if (braveModels && braveModels.length) {
+      models = mergeUniqueByUrl(braveModels);
+    }
 
-    let allCandidates = [];
-    let usedUrl = null;
-
-    for (const url of pages) {
-      try {
-        const html = await fetchHtml(url);
-        const candidates = extractCandidateNamesFromHtml(html);
-
-        // Se troviamo abbastanza roba, usciamo
-        allCandidates = candidates;
-        usedUrl = url;
-        if (candidates.length >= 8) break;
-      } catch {
-        // ignora e continua
+    // 2) Se Brave non basta → scraping “best effort” dai link del sito
+    if (models.length < 8) {
+      for (const page of cfg.fallbackPages) {
+        try {
+          const html = await fetchHtml(page);
+          const extracted = extractModelLinksFromHtml(brandId, page, html);
+          models = mergeUniqueByUrl([...models, ...extracted]);
+          if (models.length >= 8) break;
+        } catch {
+          // ignora
+        }
       }
     }
 
-    const models = pickTopModels(brandId, allCandidates);
+    models = ensureMinimum(brandId, models);
 
     const payload = {
       ok: true,
       brand: { id: brandId, name: cfg.name, site: cfg.site },
       source: {
-        usedUrl: usedUrl || null,
         braveEnabled: Boolean(process.env.BRAVE_API_KEY),
         note:
-          "Estrazione automatica best-effort. Se vuoi lista perfetta e stabile, aggiorna MANUAL_MODELS in api/models.js oppure integra scraping mirato per ogni brand."
+          "Ritorna {name,url} quando trova pagine modello. Se Brave non è attivo o il sito cambia struttura, alcuni fallback possono uscire senza url."
       },
       models
     };
