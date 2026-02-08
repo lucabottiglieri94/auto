@@ -39,13 +39,12 @@ const MANUAL_MODELS = {
 };
 
 const JEEP_MODEL_URLS = {
-  "avenger": "https://www.jeep.it/avenger",
-  "renegade": "https://www.jeep.it/renegade",
-  "compass": "https://www.jeep.it/compass",
-  "wrangler": "https://www.jeep.it/wrangler",
+  avenger: "https://www.jeep.it/avenger",
+  renegade: "https://www.jeep.it/renegade",
+  compass: "https://www.jeep.it/compass",
+  wrangler: "https://www.jeep.it/wrangler",
   "grand cherokee": "https://www.jeep.it/grand-cherokee"
 };
-
 
 /* ===================== HELPERS ===================== */
 const BRAND_HOME = {
@@ -95,7 +94,8 @@ function shapeModels(rawModels, brandId, usedUrl = "") {
     }
     if (m && typeof m === "object") {
       const name = String(m.name || m.title || m.label || "").trim();
-      const urlRaw = m.url || m.href || m.link || m.permalink || m.pageUrl || "";
+      const urlRaw =
+        m.url || m.href || m.link || m.permalink || m.pageUrl || "";
       const url = absUrl(base, String(urlRaw || "").trim());
       if (name) out.push({ name, url });
     }
@@ -123,11 +123,23 @@ function isAllowedModelUrl(brandId, url) {
 
   // blocca pagine inutili
   const blocked = [
-    "/privacy", "/cookie", "/contatti", "/newsletter",
-    "/concessionari", "/assistenza", "/servizi",
-    "/finanziamenti", "/promozioni", "/offerte",
-    "/usato", "/configuratore", "/sitemap",
-    "/accessori", "/shop", "/merch", "/login"
+    "/privacy",
+    "/cookie",
+    "/contatti",
+    "/newsletter",
+    "/concessionari",
+    "/assistenza",
+    "/servizi",
+    "/finanziamenti",
+    "/promozioni",
+    "/offerte",
+    "/usato",
+    "/configuratore",
+    "/sitemap",
+    "/accessori",
+    "/shop",
+    "/merch",
+    "/login"
   ];
   if (blocked.some((p) => low.includes(p))) return false;
 
@@ -137,12 +149,23 @@ function isAllowedModelUrl(brandId, url) {
   }
 
   // JEEP: regole smart
-  const allowKeywords = ["avenger", "renegade", "compass", "wrangler", "cherokee", "grand"];
+  const allowKeywords = [
+    "avenger",
+    "renegade",
+    "compass",
+    "wrangler",
+    "cherokee",
+    "grand"
+  ];
   if (allowKeywords.some((k) => low.includes("/" + k))) return true;
 
   // fallback: pagine “pulite” a 1 segmento (es: https://www.jeep.it/avenger/)
   const path = low.replace(/^https?:\/\/[^/]+/i, "");
-  const segments = path.split("?")[0].split("#")[0].split("/").filter(Boolean);
+  const segments = path
+    .split("?")[0]
+    .split("#")[0]
+    .split("/")
+    .filter(Boolean);
   if (segments.length === 1) return true;
 
   return false;
@@ -245,8 +268,9 @@ function extractModelLinksFromHtml(brandId, pageUrl, html) {
   });
 
   const badNames = new Set(
-    ["Gamma", "Modelli", "Auto", "Scopri", "Scopri di più", "Configura"]
-      .map((x) => x.toLowerCase())
+    ["Gamma", "Modelli", "Auto", "Scopri", "Scopri di più", "Configura"].map(
+      (x) => x.toLowerCase()
+    )
   );
 
   return out.filter((m) => {
@@ -281,7 +305,11 @@ function ensureMinimum(brandId, models) {
     const manual = MANUAL_MODELS[brandId] || [];
     for (const name of manual) {
       if (out.length >= 10) break;
-      if (!out.some((m) => (m.name || "").toLowerCase() === name.toLowerCase())) {
+      if (
+        !out.some(
+          (m) => (m.name || "").toLowerCase() === name.toLowerCase()
+        )
+      ) {
         out.push({ name, url: "" });
       }
     }
@@ -303,16 +331,21 @@ module.exports = async (req, res) => {
     const brandId = normalizeBrand(brandRaw);
 
     if (!brandId) {
-      return bad(res, "Parametro brand mancante. Esempio: /api/models?brand=fiat");
+      return bad(
+        res,
+        "Parametro brand mancante. Esempio: /api/models?brand=fiat"
+      );
     }
 
     const cfg = BRAND_CONFIG[brandId];
     if (!cfg) {
-      return bad(res, "Brand non supportato", { supported: Object.keys(BRAND_CONFIG) });
+      return bad(res, "Brand non supportato", {
+        supported: Object.keys(BRAND_CONFIG)
+      });
     }
 
-const cacheKey = `models:v4:${brandId}`;
- const cached = cacheGet(cacheKey);
+    const cacheKey = `models:v4:${brandId}`;
+    const cached = cacheGet(cacheKey);
     if (cached) return ok(res, cached);
 
     let models = [];
@@ -341,49 +374,39 @@ const cacheKey = `models:v4:${brandId}`;
     models = ensureMinimum(brandId, models);
 
     // 4) shape finale: garantisce {name,url} e url assoluti dove presenti
-   models = shapeModels(models, brandId, cfg.site);
+    models = shapeModels(models, brandId, cfg.site);
 
-// FORZA URL JEEP SEMPRE (anche se Brave/scraping falliscono)
-if (brandId === "jeep") {
-  const JEEP_MODEL_URLS = {
-    "avenger": "https://www.jeep.it/avenger",
-    "renegade": "https://www.jeep.it/renegade",
-    "compass": "https://www.jeep.it/compass",
-    "wrangler": "https://www.jeep.it/wrangler",
-    "grand cherokee": "https://www.jeep.it/grand-cherokee"
-  };
+    // 5) FORZA URL JEEP SEMPRE (anche se Brave/scraping falliscono)
+    if (brandId === "jeep") {
+      const slugify = (s) =>
+        String(s || "")
+          .toLowerCase()
+          .trim()
+          .replace(/\s+/g, "-")
+          .replace(/[^a-z0-9-]/g, "");
 
-  const slugify = (s) =>
-    String(s || "")
-      .toLowerCase()
-      .trim()
-      .replace(/\s+/g, "-")
-      .replace(/[^a-z0-9-]/g, "");
+      models = models.map((m) => {
+        const name = String(m.name || "").trim();
+        const key = name.toLowerCase().trim();
 
-  models = models.map(m => {
-    const name = String(m.name || "").trim();
-    const key = name.toLowerCase().trim();
+        if (m.url) return m;
 
-    if (m.url) return m;
+        // mapping noto
+        const mapped = JEEP_MODEL_URLS[key];
+        if (mapped) return { name, url: mapped };
 
-    // 1) mapping noto
-    const mapped = JEEP_MODEL_URLS[key];
-    if (mapped) return { name, url: mapped };
-
-    // 2) fallback: https://www.jeep.it/<slug>
-    const slug = slugify(name);
-    return { name, url: slug ? `https://www.jeep.it/${slug}` : "" };
-  });
-}
-
+        // fallback: https://www.jeep.it/<slug>
+        const slug = slugify(name);
+        return { name, url: slug ? `https://www.jeep.it/${slug}` : "" };
+      });
+    }
 
     const payload = {
       ok: true,
       brand: { id: brandId, name: cfg.name, site: cfg.site },
       source: {
         braveEnabled: Boolean(process.env.BRAVE_API_KEY),
-        note:
-          "Ritorna sempre {name,url}. Per Jeep usa filtri smart e prova Brave+scraping. Url vuoto solo se non trovato (fallback manuale)."
+        note: "Ritorna sempre {name,url}. Per Jeep usa filtri smart e prova Brave+scraping. Url vuoto solo se non trovato (fallback manuale)."
       },
       models
     };
@@ -391,6 +414,8 @@ if (brandId === "jeep") {
     cacheSet(cacheKey, payload, ttlMs());
     return ok(res, payload);
   } catch (e) {
-    return serverError(res, "Errore backend", { detail: String(e?.message || e) });
+    return serverError(res, "Errore backend", {
+      detail: String(e?.message || e)
+    });
   }
 };
