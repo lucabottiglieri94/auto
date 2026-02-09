@@ -1,21 +1,4 @@
 import * as cheerio from "cheerio";
-import admin from "firebase-admin";
-
-function initAdmin() {
-  if (admin.apps.length) return;
-
-  const projectId = process.env.FIREBASE_PROJECT_ID;
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKey = (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
-
-  if (!projectId || !clientEmail || !privateKey) {
-    throw new Error("Missing Firebase ENV (PROJECT_ID / CLIENT_EMAIL / PRIVATE_KEY)");
-  }
-
-  admin.initializeApp({
-    credential: admin.credential.cert({ projectId, clientEmail, privateKey }),
-  });
-}
 
 function applyCors(req, res) {
   const allowed = new Set([
@@ -27,17 +10,15 @@ function applyCors(req, res) {
   const origin = req.headers.origin;
   if (origin && allowed.has(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
-  } else {
-    // niente header = browser blocca, ma evita di aprire a tutti
+    res.setHeader("Vary", "Origin");
   }
 
-  res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Api-Key");
   res.setHeader("Access-Control-Max-Age", "86400");
 
   if (req.method === "OPTIONS") {
-    res.status(200).end();
+    res.status(204).end();
     return true;
   }
   return false;
@@ -50,23 +31,15 @@ export default async function handler(req, res) {
     return res.status(405).json({ items: [], error: "Method Not Allowed" });
   }
 
-  // Auth: verifica Firebase ID token
-  const auth = req.headers.authorization || "";
-  const match = auth.match(/^Bearer\s+(.+)$/i);
-  if (!match) return res.status(401).json({ items: [], error: "Missing token" });
-
-  try {
-    initAdmin();
-    await admin.auth().verifyIdToken(match[1]);
-  } catch (e) {
-    return res.status(401).json({ items: [], error: "Unauthorized" });
-  }
-
-  // Scraping
   try {
     const url = "https://www.motorisumotori.it/category/news";
     const r = await fetch(url, {
-      headers: { "user-agent": "AutoAI-NewsBot/1.0 (+https://vercel.com)" },
+      headers: {
+        "user-agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+        "accept": "text/html,application/xhtml+xml",
+        "accept-language": "it-IT,it;q=0.9,en;q=0.8",
+      },
     });
 
     if (!r.ok) {
@@ -84,7 +57,6 @@ export default async function handler(req, res) {
 
       const title = $(a).text().trim();
       let link = $(a).attr("href") || "";
-
       if (!title || !link) return;
 
       if (link.startsWith("/")) link = "https://www.motorisumotori.it" + link;
@@ -96,7 +68,7 @@ export default async function handler(req, res) {
       items.push({ title, url: link, date: "" });
     });
 
-    res.setHeader("Cache-Control", "s-maxage=43200, stale-while-revalidate=3600");
+    res.setHeader("Cache-Control", "s-maxage=1800, stale-while-revalidate=3600");
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     return res.status(200).json({ items });
   } catch (e) {
