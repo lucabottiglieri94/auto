@@ -1,7 +1,5 @@
-import * as cheerio from "cheerio";
-
 function applyCors(req, res) {
-  const allowed = new Set([
+  const allowedOrigins = new Set([
     "https://lucabottiglieri94.github.io",
     "http://localhost:5173",
     "http://localhost:3000",
@@ -9,16 +7,12 @@ function applyCors(req, res) {
 
   const origin = req.headers.origin;
 
-  if (origin && allowed.has(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Vary", "Origin");
-  } else {
-    res.setHeader("Access-Control-Allow-Origin", "*");
-  }
-
+  // Setta SEMPRE i CORS headers
+  res.setHeader("Access-Control-Allow-Origin", allowedOrigins.has(origin) ? origin : "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
   res.setHeader("Access-Control-Max-Age", "86400");
+  res.setHeader("Vary", "Origin");
 
   if (req.method === "OPTIONS") {
     res.status(204).end();
@@ -26,6 +20,7 @@ function applyCors(req, res) {
   }
   return false;
 }
+
 
 export default async function handler(req, res) {
   if (applyCors(req, res)) return;
