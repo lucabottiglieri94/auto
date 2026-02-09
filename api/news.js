@@ -8,13 +8,17 @@ function applyCors(req, res) {
   ]);
 
   const origin = req.headers.origin;
+
+  // Se arriva una Origin nota, la riflettiamo. Altrimenti mettiamo "*" per evitare Failed to fetch.
   if (origin && allowed.has(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
+  } else {
+    res.setHeader("Access-Control-Allow-Origin", "*");
   }
 
   res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Api-Key");
+  res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Api-Key");
   res.setHeader("Access-Control-Max-Age", "86400");
 
   if (req.method === "OPTIONS") {
@@ -37,7 +41,7 @@ export default async function handler(req, res) {
       headers: {
         "user-agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
-        "accept": "text/html,application/xhtml+xml",
+        accept: "text/html,application/xhtml+xml",
         "accept-language": "it-IT,it;q=0.9,en;q=0.8",
       },
     });
