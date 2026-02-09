@@ -13,7 +13,6 @@ function applyCors(req, res) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
   } else {
-    // fallback (evita Failed to fetch)
     res.setHeader("Access-Control-Allow-Origin", "*");
   }
 
@@ -36,7 +35,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const feedUrl = "https://www.motorisumotori.it/feed";
+    const feedUrl = "https://www.motor1.com/it/rss/news.xml";  // Nuovo feed affidabile
 
     const r = await fetch(feedUrl, {
       headers: {
@@ -48,6 +47,7 @@ export default async function handler(req, res) {
     });
 
     if (!r.ok) {
+      console.error('Fetch failed:', r.status, r.statusText);
       return res.status(502).json({ items: [], error: "Upstream HTTP " + r.status });
     }
 
@@ -69,13 +69,19 @@ export default async function handler(req, res) {
       if (seen.has(link)) return;
       seen.add(link);
 
-      items.push({ title, url: link, date: pubDate || "" });
+      items.push({ 
+        title, 
+        url: link, 
+        date: pubDate || "" 
+      });
     });
 
     res.setHeader("Cache-Control", "s-maxage=900, stale-while-revalidate=1800");
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     return res.status(200).json({ items });
   } catch (e) {
-    return res.status(500).json({ items: [], error: e?.message || "error" });
+    console.error('Handler error:', e);
+    return res.status(500).json({ items: [], error: e?.message || "Internal error" });
   }
 }
+
