@@ -61,4 +61,27 @@ export default async function handler(req, res) {
     $("item").each((_, it) => {
       if (items.length >= 12) return;
 
-      const title = $(it).
+      const title = $(it).find("title").first().text().trim();
+      const link = $(it).find("link").first().text().trim();
+      const pubDate = $(it).find("pubDate").first().text().trim();
+
+      if (!title || !link) return;
+      if (!/^https?:\/\//i.test(link)) return;
+      if (seen.has(link)) return;
+
+      seen.add(link);
+      items.push({
+        title,
+        url: link,
+        date: pubDate || "",
+      });
+    });
+
+    res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=900");
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    return res.status(200).json({ items });
+  } catch (e) {
+    return res.status(500).json({ items: [], error: e?.message || "Internal error" });
+  }
+}
+
