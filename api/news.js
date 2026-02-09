@@ -1,35 +1,15 @@
 import * as cheerio from "cheerio";
 
-function applyCors(req, res) {
-  const allowed = new Set([
-    "https://lucabottiglieri94.github.io",
-    "http://localhost:5173",
-    "http://localhost:3000",
-  ]);
-
-  const origin = req.headers.origin;
-
-  // Se arriva una Origin nota, la riflettiamo. Altrimenti mettiamo "*" per evitare Failed to fetch.
-  if (origin && allowed.has(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Vary", "Origin");
-  } else {
-    res.setHeader("Access-Control-Allow-Origin", "*");
-  }
-
+export default async function handler(req, res) {
+  // CORS (ridondante: oltre al vercel.json)
+  res.setHeader("Access-Control-Allow-Origin", "https://lucabottiglieri94.github.io");
   res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Api-Key");
+  res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
   res.setHeader("Access-Control-Max-Age", "86400");
 
   if (req.method === "OPTIONS") {
-    res.status(204).end();
-    return true;
+    return res.status(200).end();
   }
-  return false;
-}
-
-export default async function handler(req, res) {
-  if (applyCors(req, res)) return;
 
   if (req.method !== "GET") {
     return res.status(405).json({ items: [], error: "Method Not Allowed" });
