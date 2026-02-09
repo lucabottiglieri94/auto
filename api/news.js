@@ -1,3 +1,5 @@
+import * as cheerio from "cheerio";
+
 function applyCors(req, res) {
   const allowedOrigins = new Set([
     "https://lucabottiglieri94.github.io",
@@ -7,7 +9,6 @@ function applyCors(req, res) {
 
   const origin = req.headers.origin;
 
-  // Setta SEMPRE i CORS headers
   res.setHeader("Access-Control-Allow-Origin", allowedOrigins.has(origin) ? origin : "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
@@ -21,7 +22,6 @@ function applyCors(req, res) {
   return false;
 }
 
-
 export default async function handler(req, res) {
   if (applyCors(req, res)) return;
 
@@ -30,9 +30,11 @@ export default async function handler(req, res) {
   }
 
   try {
-    const feedUrl = "https://www.motor1.com/it/rss/news.xml";  // Nuovo feed affidabile
+    // ✅ Feed corretto Motor1 Italia
+    const feedUrl = "https://it.motor1.com/rss/news/all/";
 
     const r = await fetch(feedUrl, {
+      redirect: "follow",
       headers: {
         "user-agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
@@ -42,41 +44,21 @@ export default async function handler(req, res) {
     });
 
     if (!r.ok) {
-      console.error('Fetch failed:', r.status, r.statusText);
-      return res.status(502).json({ items: [], error: "Upstream HTTP " + r.status });
+      const txt = await r.text().catch(() => "");
+      return res.status(502).json({
+        items: [],
+        error: "Upstream HTTP " + r.status,
+        detail: txt.slice(0, 180),
+      });
     }
 
     const xml = await r.text();
-    const $ = cheerio.load(xml, { xmlMode: true });
 
+    const $ = cheerio.load(xml, { xmlMode: true });
     const items = [];
     const seen = new Set();
 
     $("item").each((_, it) => {
-      if (items.length >= 8) return;
+      if (items.length >= 12) return;
 
-      const title = $(it).find("title").first().text().trim();
-      const link = $(it).find("link").first().text().trim();
-      const pubDate = $(it).find("pubDate").first().text().trim();
-
-      if (!title || !link) return;
-      if (!link.startsWith("http")) return;
-      if (seen.has(link)) return;
-      seen.add(link);
-
-      items.push({ 
-        title, 
-        url: link, 
-        date: pubDate || "" 
-      });
-    });
-
-    res.setHeader("Cache-Control", "s-maxage=900, stale-while-revalidate=1800");
-    res.setHeader("Content-Type", "application/json; charset=utf-8");
-    return res.status(200).json({ items });
-  } catch (e) {
-    console.error('Handler error:', e);
-    return res.status(500).json({ items: [], error: e?.message || "Internal error" });
-  }
-}
-
+      const title = $(it).
