@@ -21,11 +21,28 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Query parameter "q" is required' });
     }
 
-    // Migliora la query aggiungendo contesto automotive
-    const enhancedQuery = `${q} site:fiat.it OR site:jeep-official.it OR site:alfaromeo.it OR site:lancia.it configuratore`;
+    // Siti prioritari per info automotive
+    const prioritySites = [
+      'quattroruote.it/listino',
+      'fiat.it',
+      'jeep-official.it', 
+      'alfaromeo.it',
+      'lancia.it',
+      'autoblog.it',
+      'motorbox.com',
+      'auto.it',
+      'autoappassionati.it',
+      'automoto.it'
+    ];
+
+    // Costruisci query ottimizzata
+    const siteQuery = prioritySites.slice(0, 6).map(site => `site:${site}`).join(' OR ');
+    const enhancedQuery = `${q} (${siteQuery})`;
+
+    console.log('Searching with query:', enhancedQuery);
 
     const response = await fetch(
-      `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(enhancedQuery)}&count=5`,
+      `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(enhancedQuery)}&count=10&freshness=month`,
       {
         headers: {
           'Accept': 'application/json',
@@ -41,12 +58,28 @@ export default async function handler(req, res) {
 
     const data = await response.json();
     
-    // Estrai solo le info utili
-    const results = data.web?.results?.map(r => ({
+    // Estrai e ordina i risultati dando priorità a Quattroruote
+    let results = data.web?.results?.map(r => ({
       title: r.title,
       url: r.url,
       description: r.description,
+      isQuattroruote: r.url.includes('quattroruote.it'),
+      isOfficialBrand: ['fiat.it', 'jeep-official.it', 'alfaromeo.it', 'lancia.it'].some(site => r.url.includes(site))
     })) || [];
+
+    // Ordina: prima Quattroruote, poi siti ufficiali, poi altri
+    results.sort((a, b) => {
+      if (a.isQuattroruote && !b.isQuattroruote) return -1;
+      if (!a.isQuattroruote && b.isQuattroruote) return 1;
+      if (a.isOfficialBrand && !b.isOfficialBrand) return -1;
+      if (!a.isOfficialBrand && b.isOfficialBrand) return 1;
+      return 0;
+    });
+
+    // Rimuovi flag interni prima di inviare
+    results = results.map(({ isQuattroruote, isOfficialBrand, ...rest }) => rest);
+
+    console.log(`Found ${results.length} results`);
 
     res.status(200).json({ results });
 
