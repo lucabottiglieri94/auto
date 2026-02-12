@@ -1,16 +1,26 @@
 {
-  "name": "auto-news-backend",
-  "version": "1.0.0",
-  "type": "module",
-  "main": "server.js",
+  "name": "aibott-automotive-backend",
+  "version": "2.0.0",
+  "description": "Backend per AI BOTT Automotive con scraper CentroAuto",
+  "main": "backend-server.js",
   "scripts": {
-    "dev": "node server.js",
-    "start": "node server.js"
+    "start": "node backend-server.js",
+    "dev": "nodemon backend-server.js",
+    "scrape": "node -e \"require('./backend-server.js')\""
   },
+  "keywords": ["automotive", "ai", "chatbot", "scraper"],
+  "author": "AI BOTT Team",
+  "license": "MIT",
   "dependencies": {
+    "express": "^4.18.2",
     "cors": "^2.8.5",
-    "cheerio": "^1.0.0-rc.12",
-    "express": "^4.19.2",
-    "rss-parser": "^3.13.0"
+    "axios": "^1.6.0",
+    "cheerio": "^1.0.0-rc.12"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=16.0.0"
   }
 }
